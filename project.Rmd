@@ -1,0 +1,170 @@
+---
+title: "Prediction of the manner in which respondents performed barbell lifts"
+output: html_document
+---
+<br/>
+
+### Description
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit now it is possible to collect a large amount of data about personal activity relatively inexpensively. <br/>
+People regularly quantify how much of a particular activity they do, but they rarely quantify how well they do it. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+
+### Cleaning data
+
+```{r echo = F, message = FALSE}
+require(caret)
+require(ggplot2)
+require(randomForest)
+
+url.training <- 'http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+url.testing <- 'http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+file.training <- basename(url.training)
+file.testing <- basename(url.testing)
+```
+
+First of all we need to refine data and prepare the dataset for investigation. <br />When I checked out the dataset I found that there are several representations missing values, so taking this into account let's load the dataset:
+
+```{r cache = TRUE}
+if (!file.exists(file.training))
+    download.file(url.training, file.training, method = 'curl', quiet = T)
+
+if (!file.exists(file.testing))
+    download.file(url.testing, file.testing, method = 'curl', quiet = T)
+
+load.csv <- function(file) {
+    read.csv(file,
+             header = T,
+             na.strings = c(" ", "", "NA"),
+             stringsAsFactors = F)
+}
+
+training <- load.csv(file.training)
+testing  <- load.csv(file.testing)
+```
+
+Let's clear a loaded dataset off the columns that have more than `50%` missing values, rule out duplicated columns and obviously useless columns like observation's indicies:
+
+```{r}
+cvtd_ts.id <- which(colnames(training) == 'cvtd_timestamp')
+problem.id <- which(colnames(testing) == 'problem_id')
+na.id <- which(apply(training, 2, function(x) {
+    sum(is.na(x))/length(x)
+}) > .5)
+
+ids <- c(1, na.id, cvtd_ts.id)
+
+training <- training[, -ids]
+testing <- testing[, -c(ids, problem.id)]
+```
+
+```{r echo = F}
+### For convinience put right classes in the testing dataset
+testing$classe <- as.factor(c('B','A','B','A','A','E','D','B','A','A','B','C','B','A','E','E','A','B','B','B'))
+```
+
+The last stage of cleaning is a determining and converting classes of predictors:
+
+```{r}
+user_name.id  <- which(colnames(training) == 'user_name')
+new_window.id <- which(colnames(training) == 'new_window')
+classe.id     <- which(colnames(training) == 'classe')
+
+ids <- c(user_name.id, new_window.id, classe.id)
+
+training[, -ids] <- rapply(training[, -ids], as.numeric)
+training[, ids]  <- rapply(training[, ids], as.factor, classes = "character", how = "replace")
+
+testing[, -ids] <- rapply(testing[, -ids], as.numeric)
+testing[, ids]  <- rapply(testing[, ids], as.factor, classes = "character", how = "replace")
+
+testing$new_window  <- as.integer(testing$new_window)
+training$new_window <- as.integer(training$new_window)
+```
+
+### Visualization
+
+In this section I tried to find patterns inside the dataset.<br/> It's not so easy because of dataset dimensionality. After cleaning, the dataset has `57` predictors. Despite this fact I found that some predictors show interesting patterns:
+
+```{r}
+ids <- which(sapply(training, class) == 'factor')
+wof.testing  <- testing[, -ids]
+wof.training <- training[, -ids]
+```
+
+```{r}
+ggplot(data = training) + 
+    aes(x = num_window, y = pitch_forearm, color = classe) +
+    geom_point(alpha=0.3) + 
+    labs(x = 'Windows', y = 'Pitch forearm')
+
+ggplot(data = training) + 
+    aes(x = num_window, y = pitch_belt, color = classe) +
+    geom_point(alpha=0.3) +
+    labs(x = 'Windows', y = 'Pitch belt')
+
+
+ggplot(data = training) + 
+    aes(x = num_window, y = magnet_dumbbell_z, color = classe) +
+    geom_point(alpha=0.3) + 
+    labs(x = 'Windows', y = 'Magnet dumbbell (z)')
+```
+
+You can notice on graphs that there are a lot of distinguishable spots and stripes belonging to diverse classes. Let's try to reduce dataset dimensionality, find principal components and look at the pattern shown by first two components:
+
+```{r}
+ids <- which(sapply(training, class) == 'factor')
+wof.testing  <- testing[, -ids]
+wof.training <- training[, -ids]
+
+pca <- preProcess(wof.training, method = 'pca', thresh = .95)
+pc.train <- predict(pca, wof.training)
+pc.test  <- predict(pca, wof.testing)
+
+ggplot(data = pc.train) + 
+    aes(x = PC1, y = PC2, color = training$classe) +
+    geom_point(alpha=0.3) +
+    labs(x = 'First principal component', y = 'Second principal component')
+```
+
+As you can see there are five big spots which clearly reveal the pattern. But there is no spot belonging to a single class. Each spot is a mix of different classes. <br/> Given results of the exploration, it's certain that dataset is not learly separable and it's not an easy task for nonlinear classifiers like the support vector machine thus I decided to use nonparametric model to solve this challenge.
+
+### Random Forest
+
+Random forest has a lot of useful features like:
+
+- It runs efficiently on large datasets.
+- There is no need for **cross-validation** or a separate test set to get an unbiased estimate of the test set error. It's estimated internally by the out-of-bag error estimate method.
+- There is no need to perform feature selection.
+- and other interesting treats.
+<br/>
+
+Fit the random forest with 100 trees and find confustion matrix to see RF's performance on training dataset:
+
+```{r}
+pml.rf <- randomForest(classe ~ ., data = training, ntree = 100)
+print(pml.rf)
+```
+
+The expected out of sample error is about `0.07%`. The graph below shows how expected error changes according to a number of growing trees and you can notice that to grow about 40 trees is enough to get the pretty good estimation of perfomance. The black line represents the expected error:
+
+```{r}
+plot(pml.rf)
+```
+
+<br/>Build a confusion matrix to check how obtained random forest works on testing data:
+
+```{r}
+confusionMatrix(testing$classe, predict(pml.rf, testing))
+```
+
+One of the pros of random forest algorithm is that it can produce vector of predictor importance:
+
+```{r}
+imp <- importance(pml.rf)
+head(imp[order(imp[, 1], decreasing = TRUE), ])
+```
+
+### Conclustion
+
+In this project I investigated the random forest approach to predict the performed manner of barbell lifts. The expected out of error is quite low and is only `0.07%`. The accuracy of the random forest on testing data is `1`, it means that all outcomes were predicted correctly. The main advantage of this approach is that you do not need to do any feature selection and what type of cross validation to use: LOOCV, k-fold (5-fold, 10-fold) and etc. But because all these processes are automated and there is no feedback from tested data to estimated model, as it can be done using a cross validation, there is a solid chance for an overfitting.
+
