@@ -126,7 +126,7 @@ ggplot(data = pc.train) +
     labs(x = 'First principal component', y = 'Second principal component')
 ```
 
-As you can see there are five big spots which clearly reveal the pattern. But there is no spot belonging to a single class. Each spot is a mix of different classes. <br/> Given results of the exploration, it's certain that dataset is not learly separable and it's not an easy task for nonlinear classifiers like the support vector machine thus I decided to use nonparametric model to solve this challenge.
+As you can see there are five big spots which clearly reveal the pattern. But there is no spot belonging to a single class. Each spot is a mix of different classes. <br/> Given results of the exploration, it's certain that dataset is not linearly separable and it's not an easy task for nonlinear classifiers like the support vector machine thus I decided to use nonparametric model to solve this challenge.
 
 ### Random Forest
 
