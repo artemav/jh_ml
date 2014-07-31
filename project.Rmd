@@ -32,7 +32,7 @@ if (!file.exists(file.testing))
     download.file(url.testing, file.testing, method = 'curl', quiet = T)
 
 load.csv <- function(file) {
-    read.csv(file,
+    read.csv(file, 
              header = T,
              na.strings = c(" ", "", "NA"),
              stringsAsFactors = F)
@@ -40,6 +40,7 @@ load.csv <- function(file) {
 
 training <- load.csv(file.training)
 testing  <- load.csv(file.testing)
+
 ```
 
 Let's clear a loaded dataset off the columns that have more than `50%` missing values, rule out duplicated columns and obviously useless columns like observation's indicies:
@@ -86,12 +87,6 @@ training$new_window <- as.integer(training$new_window)
 In this section I tried to find patterns inside the dataset.<br/> It's not so easy because of dataset dimensionality. After cleaning, the dataset has `57` predictors. Despite this fact I found that some predictors show interesting patterns:
 
 ```{r}
-ids <- which(sapply(training, class) == 'factor')
-wof.testing  <- testing[, -ids]
-wof.training <- training[, -ids]
-```
-
-```{r}
 ggplot(data = training) + 
     aes(x = num_window, y = pitch_forearm, color = classe) +
     geom_point(alpha=0.3) + 
@@ -130,7 +125,7 @@ As you can see there are five big spots which clearly reveal the pattern. But th
 
 ### Random Forest
 
-Random forest has a lot of useful features like:
+_Random forest_ has a lot of useful features like:
 
 - It runs efficiently on large datasets.
 - There is no need for **cross-validation** or a separate test set to get an unbiased estimate of the test set error. It's estimated internally by the out-of-bag error estimate method.
@@ -142,7 +137,7 @@ Fit the random forest with 100 trees and find confustion matrix to see RF's perf
 
 ```{r}
 pml.rf <- randomForest(classe ~ ., data = training, ntree = 100)
-print(pml.rf)
+pml.rf
 ```
 
 The expected out of sample error is about `0.07%`. The graph below shows how expected error changes according to a number of growing trees and you can notice that to grow about 40 trees is enough to get the pretty good estimation of perfomance. The black line represents the expected error:
@@ -164,7 +159,24 @@ imp <- importance(pml.rf)
 head(imp[order(imp[, 1], decreasing = TRUE), ])
 ```
 
-### Conclustion
+### Stochastic gradient boosting
 
-In this project I investigated the random forest approach to predict the performed manner of barbell lifts. The expected out of error is quite low and is only `0.07%`. The accuracy of the random forest on testing data is `1`, it means that all outcomes were predicted correctly. The main advantage of this approach is that you do not need to do any feature selection and what type of cross validation to use: LOOCV, k-fold (5-fold, 10-fold) and etc. But because all these processes are automated and there is no feedback from tested data to estimated model, as it can be done using a cross validation, there is a solid chance for an overfitting.
+_Stochastic gradient boosting_ is invented by Friedman as a modification of gradient boosting algorithm. It produces a model in form of an ensemble of weak prediction models like decision trees. Like in _RF_, this algorithm allows to define OOB estimate of the prediction performance, but in this case I'm going to use 5-fold cross-validation to determine tuninig parameters of _gmb_ and an expected accuracy:
+
+```{r message = F, cache = T}
+tr.ctrl <- trainControl(method = 'cv', number = 5, verboseIter = F)
+pml.gbm <- train(classe ~., method = 'gbm', trControl = tr.ctrl, data = training, verbose = F)
+pml.gbm
+```
+
+The graph below shows how a change in an estimated accuracy depends on the parameters - number of interations of boosting, tree's depth:
+
+```{r}
+plot(pml.gbm)
+```
+
+### Conclusion
+
+In this project I investigated the random forest approach to predict the performed manner of barbell lifts. The expected out of error is quite low and only `0.07%`. The accuracy of the _random forest_ on testing data is `1`, it means that all outcomes were predicted correctly. The main advantage of this approach is that you do not need to do any feature selection and pick which type of cross validation to use: LOOCV, k-fold (5-fold, 10-fold) and etc. But because all these processes are automated and there is no feedback from tested data to the estimated model, as it can be done using a cross validation, there is a solid chance for an overfitting.<br/>
+The estimated error by 5-fold cross-validation using _gbm_ is much less than OOB estimation of _random forest_, but time consumed on training models is well above and it's computationally expensive method. According to the _gbm_ summary the estimated accuracy in some cases is equal to `1`, but it is hard to believe thus _gbm_ might overfit the data.
 

@@ -48,4 +48,3 @@ testing[, ids]  <- rapply(testing[, ids], as.factor, classes = "character", how 
 
 testing$new_window  <- as.integer(testing$new_window)
 training$new_window <- as.integer(training$new_window)
-
